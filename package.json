@@ -1,18 +1,5 @@
 {
   "name": "proxy-to-supabase-cloud",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "keywords": [],
-  "author": "Inder Singh",
-  "license": "MIT",
-  "type": "module",
-  "dependencies": {
-    "@fastify/cors": "11.2.0",
-    "@fastify/http-proxy": "11.4.1",
-    "fastify": "5.7.4"
-  }
+  "type": "module"
 }
