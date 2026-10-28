@@ -1,5 +1,9 @@
 import http from 'http';
 import https from 'https';
+import dns from 'dns';
+
+// 🌟 این خط به سرور می‌گوید از DNS گوگل استفاده کند
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 const TARGET = 'lrltahqxfwjfqnqddvp.supabase.co';
 const PORT = process.env.PORT || 3000;
@@ -14,7 +18,6 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  // 🌟 این خط جادویی: جایگزینی هدر Host با آدرس Supabase
   const headers = { ...req.headers, host: TARGET };
 
   const options = {
