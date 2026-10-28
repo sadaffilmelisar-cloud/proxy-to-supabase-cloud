@@ -1,12 +1,9 @@
 import http from 'http';
-import https from 'https';
 
-const TARGET_HOST = 'lrltahqxfwjfqnqddvp.supabase.co';
-// استفاده از آی‌پی شناخته‌شده Cloudflare برای Supabase (دور زدن مشکل DNS)
-const TARGET_IP = '104.18.38.104'; 
+const TARGET = 'https://lrltahqxfwjfqnqddvp.supabase.co';
 const PORT = process.env.PORT || 3000;
 
-const server = http.createServer((req, res) => {
+http.createServer(async (req, res) => {
   // تنظیم CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -17,31 +14,35 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  const headers = { ...req.headers, host: TARGET_HOST };
+  try {
+    const url = new URL(req.url, TARGET);
+    
+    // خواندن بدنه درخواست (برای لاگین که POST است)
+    const body = req.method !== 'GET' && req.method !== 'HEAD' ? await new Promise((resolve) => {
+      const chunks = [];
+      req.on('data', (chunk) => chunks.push(chunk));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+    }) : undefined;
 
-  const options = {
-    hostname: TARGET_IP,
-    port: 443,
-    path: req.url,
-    method: req.method,
-    headers: headers,
-    servername: TARGET_HOST // بسیار مهم برای عبور از SNI
-  };
+    const headers = { ...req.headers };
+    delete headers.host; // اجازه بده fetch خودش هاست را تنظیم کند
 
-  const proxyReq = https.request(options, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
-    proxyRes.pipe(res);
-  });
+    // ارسال درخواست با fetch (مدیریت خودکار DNS و SNI)
+    const response = await fetch(url, {
+      method: req.method,
+      headers: headers,
+      body: body,
+    });
 
-  proxyReq.on('error', (err) => {
-    console.error(err);
+    // انتقال پاسخ به مرورگر
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    const arrayBuffer = await response.arrayBuffer();
+    res.end(Buffer.from(arrayBuffer));
+  } catch (error) {
+    console.error(error);
     res.writeHead(500);
-    res.end(err.message);
-  });
-
-  req.pipe(proxyReq);
-});
-
-server.listen(PORT, () => {
+    res.end(error.message);
+  }
+}).listen(PORT, () => {
   console.log(`Proxy running on port ${PORT}`);
 });
