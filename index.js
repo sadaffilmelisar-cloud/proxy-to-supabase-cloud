@@ -1,8 +1,13 @@
 import http from 'http';
 import https from 'https';
+import dns from 'dns';
 
 const TARGET = 'lrltahqxfwjfqnqddvp.supabase.co';
 const PORT = process.env.PORT || 3000;
+
+// 🔥 ساخت یک Resolver جدید و تنظیم DNSهای معروف
+const resolver = new dns.Resolver();
+resolver.setServers(['1.1.1.1', '8.8.8.8']);
 
 const server = http.createServer(async (req, res) => {
   // تنظیم CORS
@@ -16,14 +21,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // 🔥 این بخش جدید: پیدا کردن آی‌پی از طریق DNS گوگل برای دور زدن مشکل Render
-    const dohUrl = `https://dns.google/resolve?name=${TARGET}&type=A`;
-    const dohRes = await fetch(dohUrl);
-    const dohData = await dohRes.json();
-    
-    const answers = dohData.Answer ? dohData.Answer.filter(a => a.type === 1) : [];
-    if (answers.length === 0) throw new Error("Could not resolve IP");
-    const ip = answers[0].data;
+    // 🌟 پیدا کردن آی‌پی با استفاده از DNS سفارشی
+    const ip = await new Promise((resolve, reject) => {
+      resolver.resolve4(TARGET, (err, addresses) => {
+        if (err) reject(err);
+        else resolve(addresses[0]);
+      });
+    });
 
     const headers = { ...req.headers, host: TARGET };
 
@@ -33,7 +37,7 @@ const server = http.createServer(async (req, res) => {
       path: req.url,
       method: req.method,
       headers: headers,
-      servername: TARGET // تنظیم SNI برای عبور از Cloudflare
+      servername: TARGET // بسیار مهم برای عبور از SNI
     };
 
     const proxyReq = https.request(options, (proxyRes) => {
