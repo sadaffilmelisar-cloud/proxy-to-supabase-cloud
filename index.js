@@ -1,10 +1,23 @@
 import http from 'http';
+import https from 'https';
 
-const TARGET = 'https://lrltahqxfwjfqnqddvp.supabase.co';
+const TARGET = 'lrltahqxfwjfqnqddvp.supabase.co';
 const PORT = process.env.PORT || 3000;
 
-http.createServer(async (req, res) => {
-  // تنظیم CORS
+// 🔥 گرفتن آی‌پی از Cloudflare DoH (دور زدن مشکل DNS)
+async function resolveIP() {
+  const dohUrl = `https://cloudflare-dns.com/dns-query?name=${TARGET}&type=A`;
+  const res = await fetch(dohUrl, {
+    headers: { 'Accept': 'application/dns-json' }
+  });
+  const data = await res.json();
+  const answers = data.Answer || [];
+  const aRecord = answers.find(a => a.type === 1);
+  if (!aRecord) throw new Error('No A record found');
+  return aRecord.data;
+}
+
+const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -15,34 +28,44 @@ http.createServer(async (req, res) => {
   }
 
   try {
-    const url = new URL(req.url, TARGET);
-    
-    // خواندن بدنه درخواست (برای لاگین که POST است)
-    const body = req.method !== 'GET' && req.method !== 'HEAD' ? await new Promise((resolve) => {
-      const chunks = [];
-      req.on('data', (chunk) => chunks.push(chunk));
-      req.on('end', () => resolve(Buffer.concat(chunks)));
-    }) : undefined;
+    const ip = await resolveIP();
+    console.log(`Resolved ${TARGET} to ${ip}`);
 
-    const headers = { ...req.headers };
-    delete headers.host; // اجازه بده fetch خودش هاست را تنظیم کند
+    const headers = { ...req.headers, host: TARGET };
 
-    // ارسال درخواست با fetch (مدیریت خودکار DNS و SNI)
-    const response = await fetch(url, {
+    const options = {
+      hostname: ip,
+      port: 443,
+      path: req.url,
       method: req.method,
       headers: headers,
-      body: body,
+      servername: TARGET
+    };
+
+    const proxyReq = https.request(options, (proxyRes) => {
+      // حذف هدرهای فشرده‌سازی برای جلوگیری از خطای مرورگر
+      const resHeaders = { ...proxyRes.headers };
+      delete resHeaders['content-encoding'];
+      delete resHeaders['transfer-encoding'];
+
+      res.writeHead(proxyRes.statusCode, resHeaders);
+      proxyRes.pipe(res);
     });
 
-    // انتقال پاسخ به مرورگر
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    const arrayBuffer = await response.arrayBuffer();
-    res.end(Buffer.from(arrayBuffer));
+    proxyReq.on('error', (err) => {
+      console.error('Proxy error:', err);
+      res.writeHead(500);
+      res.end(err.message);
+    });
+
+    req.pipe(proxyReq);
   } catch (error) {
-    console.error(error);
+    console.error('Error:', error);
     res.writeHead(500);
     res.end(error.message);
   }
-}).listen(PORT, () => {
+});
+
+server.listen(PORT, () => {
   console.log(`Proxy running on port ${PORT}`);
 });
