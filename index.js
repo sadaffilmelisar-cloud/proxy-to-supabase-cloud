@@ -1,29 +1,42 @@
-import fastify from "fastify";
-import proxy from "@fastify/http-proxy";
-import cors from "@fastify/cors";
+import http from 'http';
+import https from 'https';
 
-const server = fastify({ logger: process.env.ENABLE_LOGGING === "true" });
+const TARGET = 'lrltahqxfwjfqnqddvp.supabase.co';
+const PORT = process.env.PORT || 3000;
 
-server.register(cors, {
-  origin: true,
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  maxAge: 86400
+const server = http.createServer((req, res) => {
+  // تنظیم CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    return res.end();
+  }
+
+  // انتقال درخواست به Supabase
+  const options = {
+    hostname: TARGET,
+    port: 443,
+    path: req.url,
+    method: req.method,
+    headers: req.headers
+  };
+
+  const proxyReq = https.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    res.writeHead(500);
+    res.end(err.message);
+  });
+
+  req.pipe(proxyReq);
 });
 
-const upstream = process.env.SUPABASE_URL;
-if (!upstream) throw new Error("SUPABASE_URL not provided");
-
-const paths = ["/rest/v1", "/auth/v1", "/realtime/v1", "/functions/v1", "/storage/v1"];
-
-for (const path of paths) {
-  server.register(proxy, {
-    upstream,
-    prefix: path,
-    rewritePrefix: path,
-    websocket: path === "/realtime/v1"
-  });
-}
-
-server
-  .listen({ port: process.env.PORT || 3000, host: "0.0.0.0" })
-  .then(val => console.log("Running :", val));
+server.listen(PORT, () => {
+  console.log(`Proxy running on port ${PORT}`);
+});
